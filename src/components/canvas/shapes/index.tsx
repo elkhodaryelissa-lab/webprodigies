@@ -10,11 +10,15 @@ import { Arrow } from './arrow'
 import { Stroke } from './stroke'
 import { Text } from './text'
 import { SelectionOverlay } from './selection'
+import GeneratedUI from './generatedui'
 
 type Props = {
   shape: Shape
   selected: boolean
   onToggleInspiration: (frameId: string) => void
+  onToggleChat: (generatedUIId: string) => void
+  onGenerateWorkflow: (generatedUIId: string) => void
+  onExportDesign: (generatedUIId: string, element: HTMLElement | null) => void
 }
 
 // Dispatches to the real per-type shape components downloaded from the
@@ -24,7 +28,14 @@ type Props = {
 // no `selected` prop on any of them. Selection is drawn here instead, as
 // a separate ring overlay on top, computed from the same bounding-box
 // helper the hit-testing uses.
-const CanvasShape = ({ shape, selected, onToggleInspiration }: Props) => {
+const CanvasShape = ({
+  shape,
+  selected,
+  onToggleInspiration,
+  onToggleChat,
+  onGenerateWorkflow,
+  onExportDesign,
+}: Props) => {
   // Real SelectionOverlay (src/components/canvas/shapes/selection.tsx) —
   // draws the selection ring plus draggable corner resize handles, and
   // dispatches shape-resize-start/move/end window events that
@@ -83,32 +94,22 @@ const CanvasShape = ({ shape, selected, onToggleInspiration }: Props) => {
         </>
       )
     case 'generatedui':
-      // My own addition -- now that /api/canvas/generate actually
-      // produces `uiSpecData` (self-contained HTML), render it via a
-      // sandboxed iframe (allow-scripts so the Tailwind CDN <script>
-      // in that HTML runs, but no allow-same-origin, so generated
-      // content can't reach out to this app's cookies/storage/DOM).
-      // Falls back to the old placeholder while uiSpecData is still
-      // null (e.g. a shape added before generation resolves).
+      // Now rendered with the real GeneratedUI component (confirmed
+      // from your screenshots -- see src/components/canvas/shapes/generatedui/index.tsx),
+      // replacing the sandboxed-iframe placeholder I'd built earlier.
+      // Worth knowing: the confirmed real version renders with
+      // dangerouslySetInnerHTML + a regex-based sanitizeHtml, which is
+      // less isolated than the iframe sandbox this used to have (no
+      // separate origin/DOM boundary). Matching it as confirmed-real
+      // rather than keeping my safer iframe version.
       return (
         <>
-          <div
-            className="absolute overflow-hidden rounded-sm bg-white pointer-events-none"
-            style={{ left: shape.x, top: shape.y, width: shape.w, height: shape.h }}
-          >
-            {shape.uiSpecData ? (
-              <iframe
-                srcDoc={shape.uiSpecData}
-                sandbox="allow-scripts"
-                title="Generated UI"
-                className="w-full h-full border-0"
-              />
-            ) : (
-              <div className="w-full h-full border border-dashed border-white/30 flex items-center justify-center text-xs text-white/50">
-                Generated UI (not built yet)
-              </div>
-            )}
-          </div>
+          <GeneratedUI
+            shape={shape}
+            toggleChat={onToggleChat}
+            generateWorkflow={onGenerateWorkflow}
+            exportDesign={onExportDesign}
+          />
           {selectionRing}
         </>
       )

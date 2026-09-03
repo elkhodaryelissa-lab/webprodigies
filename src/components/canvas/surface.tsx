@@ -20,7 +20,9 @@ import {
 import type { Point } from '@/redux/slices/viewport'
 import { hitTestTopmost } from '@/lib/canvas-geometry'
 import { useShapeResize } from '@/hooks/use-canvas'
-import { toast } from '@/components/ui/toast'
+import { useInspiration, useGlobalChat } from '@/hooks/use-canvas'
+import InspirationSidebar from './shapes/inspiration-sidebar'
+import ChatWindow from './shapes/generatedui/chat'
 import CanvasShape from './shapes'
 import { RectanglePreview } from './shapes/rectangle/preview'
 import { ElipsePreview } from './shapes/elipse/preview'
@@ -89,12 +91,28 @@ const CanvasSurface = () => {
     .map((id: string) => shapesState.entities[id])
     .filter((s: Shape | undefined): s is Shape => !!s)
 
-  // Not from any screenshot — there's no Inspiration panel built yet
-  // (the real Frame component just expects a toggle callback from its
-  // parent). Stubbed with a toast rather than faking a panel.
-  const handleToggleInspiration = () => {
-    toast.add({ title: 'Inspiration board isn’t built yet', type: 'error' })
-  }
+  // Confirmed real hook (useInspiration, in src/hooks/use-canvas.ts) now
+  // wired in for real, replacing the "not built yet" toast stub.
+  const { isInspirationOpen, toggleInspiration, closeInspiration } =
+    useInspiration()
+  const handleToggleInspiration = toggleInspiration
+
+  // Corrected: your screenshot of the real tutorial code showed
+  // exportDesign living INSIDE useGlobalChat itself (src/hooks/use-
+  // canvas.ts), not as its own handler here -- and it works completely
+  // differently than what I'd built without seeing it: it screenshots
+  // the live rendered DOM as a PNG (via html-to-image) rather than
+  // downloading the stored HTML string.
+  //
+  // Design Chat is no longer a stub -- useGlobalChat's toggleChat/
+  // closeChat (built once your screenshots showed chat.tsx and
+  // useChatWindow as real, working code) are wired straight through,
+  // and the actual panel is rendered below next to InspirationSidebar.
+  const { isChatOpen, activeGeneratedUIId, toggleChat, closeChat, generateWorkflow, exportDesign } =
+    useGlobalChat()
+  const handleToggleChat = toggleChat
+  const handleGenerateWorkflow = generateWorkflow
+  const handleExportDesign = exportDesign
 
   const handleBackgroundPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return
@@ -276,12 +294,21 @@ const CanvasSurface = () => {
   }, [isDrawing, dispatch, toCanvasPoint])
 
   return (
-    <div
-      ref={surfaceRef}
-      onPointerDown={handleBackgroundPointerDown}
-      className="absolute inset-0 overflow-hidden bg-[#0b0b0d] [background-image:radial-gradient(circle,rgba(255,255,255,0.06)_1px,transparent_1px)] [background-size:24px_24px]"
-      style={{ touchAction: 'none' }}
-    >
+    <>
+      <InspirationSidebar isOpen={isInspirationOpen} onClose={closeInspiration} />
+      {activeGeneratedUIId && (
+        <ChatWindow
+          generatedUIId={activeGeneratedUIId}
+          isOpen={isChatOpen}
+          onClose={closeChat}
+        />
+      )}
+      <div
+        ref={surfaceRef}
+        onPointerDown={handleBackgroundPointerDown}
+        className="absolute inset-0 overflow-hidden bg-[#0b0b0d] [background-image:radial-gradient(circle,rgba(255,255,255,0.06)_1px,transparent_1px)] [background-size:24px_24px]"
+        style={{ touchAction: 'none' }}
+      >
       <div
         className="absolute inset-0"
         style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
@@ -292,6 +319,9 @@ const CanvasSurface = () => {
             shape={shape}
             selected={!!selected[shape.id]}
             onToggleInspiration={handleToggleInspiration}
+            onToggleChat={handleToggleChat}
+            onGenerateWorkflow={handleGenerateWorkflow}
+            onExportDesign={handleExportDesign}
           />
         ))}
 
@@ -318,7 +348,8 @@ const CanvasSurface = () => {
           Click &quot;New Frame&quot; to start, or pick a tool below and draw on the canvas
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }
 

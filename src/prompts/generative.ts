@@ -44,21 +44,81 @@ export function buildStyleGuidePrompt({
 }
 
 //redesign
+// Extended against src/app/api/generate/redesign/route.ts's confirmed
+// real screenshot: the original version of this function (userMessage
+// + currentHTML only, wireframe block always appended, no colors/
+// typography/imageUrls) didn't match what the real route actually
+// does. Corrected order (currentHTML block first, then a *conditional*
+// wireframe block with the confirmed console.log/else pair -- not
+// always-on), and added the colors/typography/imageUrls sections
+// (same confirmed format buildWorkflowPrompt below already uses,
+// copied from the same route.ts screenshot).
 export function buildRedesignPrompt({
   userMessage,
   currentHTML,
+  wireframeSnapshot,
+  colors,
+  typography,
+  imageUrls,
 }: {
   userMessage: string
   currentHTML: string
+  wireframeSnapshot?: string | null
+  colors: ColorSection[]
+  typography: TypographySection[]
+  imageUrls: string[]
 }): string {
   let userPrompt = `Please redesign this UI based on my request: "${userMessage}"`
 
-  userPrompt += `\n\nWireframe Context: I'm providing a wireframe image that shows the EXACT original design layout and structure that this UI was generated from. This wireframe represents the specific frame that was used to create the current design. Please use this as visual context to understand the intended layout, structure, and design elements when making improvements. The wireframe shows the original wireframe/mockup that the user drew or created.`
+  if (currentHTML) {
+    userPrompt += `\n\nCurrent HTML for reference:\n${currentHTML.substring(
+      0,
+      1000
+    )}...`
+  }
 
-  userPrompt += `\n\nCurrent HTML for reference:\n${currentHTML.substring(
-    0,
-    1000
-  )}...`
+  if (wireframeSnapshot) {
+    userPrompt += `\n\nWireframe Context: I'm providing a wireframe image that shows the EXACT original design layout and structure that this UI was generated from. This wireframe represents the specific frame that was used to create the current design. Please use this as visual context to understand the intended layout, structure, and design elements when making improvements. The wireframe shows the original wireframe/mockup that the user drew or created.`
+    console.log('\u{1F5BC}\uFE0F Using wireframe context for regeneration')
+  } else {
+    console.log(
+      '\u{1F4DD} No wireframe context available -- using text-only regeneration'
+    )
+  }
+
+  if (colors.length > 0) {
+    userPrompt += `\n\nStyle Guide Colors:\n${colors
+      .map((color) =>
+        color.swatches
+          .map(
+            (swatch) =>
+              `${swatch.name}: ${swatch.hexColor}, ${swatch.description}`
+          )
+          .join(", ")
+      )
+      .join(", ")}`
+  }
+
+  if (typography.length > 0) {
+    userPrompt += `\n\nTypography:\n${typography
+      .map((typo) =>
+        typo.styles
+          .map(
+            (style) =>
+              `${style.name}: ${style.description}, ${style.fontFamily}, ${style.fontWeight}, ${style.fontSize}, ${style.lineHeight}`
+          )
+          .join(", ")
+      )
+      .join(", ")}`
+  }
+
+  if (imageUrls.length > 0) {
+    userPrompt += `\n\nInspiration Images Available: ${imageUrls.length} reference images for visual style and inspiration.`
+  }
+
+  // Confirmed real, added from your latest screenshot -- I'd stopped
+  // right before this closing line last round.
+  userPrompt += `\n\nPlease generate a completely new HTML design based on my request while following the style guide, maintaining professional quality, and considering the wireframe context for layout understanding.`
 
   return userPrompt
 }

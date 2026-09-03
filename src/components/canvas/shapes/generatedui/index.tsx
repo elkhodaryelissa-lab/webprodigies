@@ -22,7 +22,45 @@ import { GeneratedUIShape } from '@/redux/slices/shapes'
 import { useUpdateContainer } from '@/hooks/use-styles'
 import { LiquidGlassButton } from '@/components/buttons/liquid-glass'
 import { Download, Workflow, MessageCircle } from 'lucide-react'
-import React from 'react'
+import React, { useEffect } from 'react'
+
+// NEW, not from a screenshot -- root-causing your "text is black / I
+// can't see anything" report. Two things were going on, same root
+// cause as the white-PNG bug (content rendering same color as its
+// background):
+//
+// 1) The system prompt (src/lib/prompts.ts) tells the model to put
+//    <script src="https://cdn.tailwindcss.com"></script> in <head> so
+//    its Tailwind utility classes (bg-white, text-slate-900, etc.)
+//    actually resolve to real CSS. But sanitizeHtml (use-styles.ts)
+//    strips every <script> tag for XSS safety, and even if it didn't,
+//    a <script> injected via dangerouslySetInnerHTML never executes --
+//    that's inert-by-design DOM behavior. So the Tailwind CDN was
+//    NEVER loading, which means every className in the AI's HTML was a
+//    no-op: no background, no text color -- just the browser default
+//    (black text, transparent background) sitting over this app's dark
+//    canvas. Invisible black-on-dark text, exactly what you described.
+//    Fix: load the Tailwind Play CDN once, globally, ourselves (it has
+//    its own MutationObserver and will style newly-inserted DOM, so it
+//    still picks up each generated block as it streams in).
+//
+// 2) Even with Tailwind loading, a full <!DOCTYPE html><html>...
+//    document injected into a div loses its <body> tag/classes during
+//    HTML fragment parsing (only body's children survive), so a
+//    bg-white the model put on <body> would be silently dropped too.
+//    Belt-and-suspenders: give the rendering container its own
+//    explicit white background below.
+let tailwindCdnLoading = false
+const ensureTailwindCdn = () => {
+  if (typeof document === 'undefined') return
+  if (document.querySelector('script[data-generated-ui-tailwind]')) return
+  if (tailwindCdnLoading) return
+  tailwindCdnLoading = true
+  const script = document.createElement('script')
+  script.src = 'https://cdn.tailwindcss.com'
+  script.setAttribute('data-generated-ui-tailwind', 'true')
+  document.head.appendChild(script)
+}
 
 type Props = {
   shape: GeneratedUIShape
@@ -38,6 +76,10 @@ const GeneratedUI = ({
   exportDesign,
 }: Props) => {
   const { sanitizeHtml, containerRef } = useUpdateContainer(shape)
+
+  useEffect(() => {
+    ensureTailwindCdn()
+  }, [])
 
   const handleExportDesign = () =>
     exportDesign(shape.id, containerRef.current)
@@ -100,7 +142,7 @@ const GeneratedUI = ({
         </div>
         {shape.uiSpecData ? (
           <div
-            className="h-auto"
+            className="h-auto rounded-lg overflow-hidden bg-white text-black"
             dangerouslySetInnerHTML={{
               __html: sanitizeHtml(shape.uiSpecData),
             }}

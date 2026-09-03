@@ -26,6 +26,7 @@
     "convex": "^1.25.4",
     "date-fns": "^4.4.0",
     "embla-carousel-react": "^8.6.0",
+    "html-to-image": "^1.11.13",
     "inngest": "^3.54.2",
     "input-otp": "^1.5.0",
     "lucide-react": "^1.33.0",

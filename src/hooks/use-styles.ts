@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
-import { useMutation } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
 import { toast } from '@/components/ui/toast'
 // Confirmed real: useStyleGuide's guard clauses call `toast.error(...)`,
 // which is sonner's API, not this file's existing `@/components/ui/toast`
@@ -431,4 +431,182 @@ export const sanitizeHtml = (html: string) => {
     .replace(/data:/gi, '') // Remove data: protocols for safety
 
   return sanitized
+}
+
+// Not from any screenshot -- you asked me to build the Inspiration
+// panel to match a reference mockup (title, 2x3 grid of up to 6 image
+// slots with delete, Upload button, drag-and-drop). Mirrors
+// useMoodBoard above as closely as it can (same upload-via-
+// generateUploadUrl flow, same drag/drop handlers), just simpler (plain
+// useState instead of react-hook-form, since nothing else in this
+// panel needs form state) and capped at 6 images via
+// convex/inspiration.ts's addInspirationImage/removeInspirationImage
+// (added alongside this).
+export interface InspirationImage {
+  id: string
+  file?: File
+  preview: string
+  storageId?: string
+  uploaded: boolean
+  uploading: boolean
+  error?: string
+  isFromServer?: boolean
+}
+
+export const useInspirationImages = (projectId: string) => {
+  const [images, setImages] = useState<InspirationImage[]>([])
+  const [dragActive, setDragActive] = useState(false)
+
+  const serverImages = useQuery(
+    api.inspiration.getInspirationImages,
+    projectId ? { projectId: projectId as Id<'projects'> } : 'skip'
+  )
+
+  const generateUploadUrl = useMutation(api.moodboard.generateUploadUrl)
+  const addInspirationImage = useMutation(api.inspiration.addInspirationImage)
+  const removeInspirationImage = useMutation(
+    api.inspiration.removeInspirationImage
+  )
+
+  useEffect(() => {
+    if (!serverImages) return
+
+    const mapped: InspirationImage[] = serverImages
+      .filter((img): img is NonNullable<typeof img> => img !== null)
+      .map((img) => ({
+        id: img.id,
+        preview: img.url ?? '',
+        storageId: img.storageId,
+        uploaded: true,
+        uploading: false,
+        isFromServer: true,
+      }))
+
+    setImages((current) => {
+      const pending = current.filter((img) => !img.isFromServer)
+      return [...mapped, ...pending]
+    })
+  }, [serverImages])
+
+  const canAddMore = images.length < 6
+
+  const uploadImage = async (file: File) => {
+    const uploadUrl = await generateUploadUrl()
+    const result = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    })
+    const { storageId } = await result.json()
+
+    await addInspirationImage({
+      projectId: projectId as Id<'projects'>,
+      storageId: storageId as Id<'_storage'>,
+    })
+
+    return { storageId }
+  }
+
+  const addImage = async (file: File) => {
+    if (images.length >= 6) {
+      sonnerToast.error('Maximum 6 inspiration images allowed')
+      return
+    }
+    if (!projectId) {
+      sonnerToast.error('No project selected')
+      return
+    }
+
+    const localId = `${Date.now()}-${Math.random()}`
+    const newImage: InspirationImage = {
+      id: localId,
+      file,
+      preview: URL.createObjectURL(file),
+      uploaded: false,
+      uploading: true,
+      isFromServer: false,
+    }
+    setImages((current) => [...current, newImage])
+
+    try {
+      await uploadImage(file)
+      // The serverImages query above will pick up the new image and
+      // replace this local placeholder once Convex re-syncs; drop the
+      // placeholder now that the upload itself succeeded.
+      setImages((current) => current.filter((img) => img.id !== localId))
+    } catch (error) {
+      console.error('Inspiration image upload failed:', error)
+      setImages((current) =>
+        current.map((img) =>
+          img.id === localId
+            ? { ...img, uploading: false, error: 'Upload failed' }
+            : img
+        )
+      )
+      sonnerToast.error('Failed to upload image')
+    }
+  }
+
+  const removeImage = async (image: InspirationImage) => {
+    if (image.isFromServer && image.storageId && projectId) {
+      try {
+        await removeInspirationImage({
+          projectId: projectId as Id<'projects'>,
+          storageId: image.storageId as Id<'_storage'>,
+        })
+      } catch (error) {
+        console.error(error)
+        sonnerToast.error('Failed to remove image')
+        return
+      }
+    }
+
+    if (!image.isFromServer && image.preview.startsWith('blob:')) {
+      URL.revokeObjectURL(image.preview)
+    }
+    setImages((current) => current.filter((img) => img.id !== image.id))
+  }
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true)
+    } else if (e.type === 'dragleave') {
+      setDragActive(false)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+
+    const files = Array.from(e.dataTransfer.files)
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'))
+
+    if (imageFiles.length === 0) {
+      sonnerToast.error('Please drop image files only')
+      return
+    }
+
+    imageFiles.forEach((file) => addImage(file))
+  }
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    files.forEach((file) => addImage(file))
+    e.target.value = ''
+  }
+
+  return {
+    images,
+    dragActive,
+    canAddMore,
+    addImage,
+    removeImage,
+    handleDrag,
+    handleDrop,
+    handleFileInput,
+  }
 }

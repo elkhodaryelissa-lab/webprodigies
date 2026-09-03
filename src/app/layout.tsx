@@ -3,6 +3,17 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/theme/provider";
 import { Toaster } from "@/components/ui/toast";
+// NOT from a screenshot -- src/hooks/use-canvas.ts, use-styles.ts and
+// use-billings.ts all call sonner's toast() (toast.error/success/loading),
+// but sonner's own <Toaster /> was never mounted anywhere -- only this
+// app's own custom @/components/ui/toast Toaster was. That means every
+// sonner toast call across Generate Design, Generate Workflow, Export
+// Design, Design Chat, style-guide generation and billing has been
+// rendering nothing at all, silently. Confirmed live: triggering Generate
+// Design with 0 credits produced a real 400 from the server but zero
+// visible feedback. Adding sonner's Toaster alongside the existing one
+// fixes all of these at once.
+import { Toaster as SonnerToaster } from "sonner";
 import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
 import { ConvexClientProvider } from "./convex/provider";
 import { preloadedQueryResult } from "convex/nextjs";
@@ -50,6 +61,7 @@ export default async function RootLayout({
         <ReduxProvider preloadedState={{ profile: { user: profile } }}>
           {children}
           <Toaster />
+          <SonnerToaster theme="dark" richColors position="top-right" />
         </ReduxProvider>
        </ThemeProvider>
        </ConvexClientProvider>
